@@ -8,6 +8,11 @@ export async function GET(
 ) {
   const { id } = await params;
 
+  const user = getUserFromRequest(request);
+  if (!user) {
+    return NextResponse.json({ error: "未登录" }, { status: 401 });
+  }
+
   const order = await prisma.order.findUnique({
     where: { id },
     include: {
@@ -23,9 +28,17 @@ export async function GET(
     return NextResponse.json({ error: "订单不存在" }, { status: 404 });
   }
 
-  const user = getUserFromRequest(request);
-  if (user && user.role !== "ADMIN" && order.userId !== user.userId) {
-    return NextResponse.json({ error: "权限不足" }, { status: 403 });
+  // Only order owner or admin can view
+  if (user.role !== "ADMIN" && order.userId !== user.userId) {
+    // Organizer can see orders for their events
+    if (user.role === "ORGANIZER") {
+      const event = await prisma.event.findUnique({ where: { id: order.eventId } });
+      if (!event || event.organizerId !== user.userId) {
+        return NextResponse.json({ error: "权限不足" }, { status: 403 });
+      }
+    } else {
+      return NextResponse.json({ error: "权限不足" }, { status: 403 });
+    }
   }
 
   return NextResponse.json({ order });

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatPrice, formatDate } from "@/lib/utils";
-import { Search } from "lucide-react";
+import { Search, Ban, RotateCcw } from "lucide-react";
 
 interface Order {
   id: string;
@@ -32,13 +32,42 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchOrders = () => {
     fetch("/api/orders?all=true")
       .then((r) => r.json())
       .then((data) => setOrders(data.orders || []))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchOrders(); }, []);
+
+  const handleStatusChange = async (orderId: string, action: "cancel" | "refund") => {
+    const confirmMsg = action === "cancel" ? "确定要取消此订单吗？关联票券将失效。" : "确定要退款此订单吗？关联票券将失效。";
+    if (!confirm(confirmMsg)) return;
+
+    setActionLoading(orderId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "操作失败");
+        return;
+      }
+
+      fetchOrders();
+    } catch {
+      alert("网络错误");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const filtered = orders.filter((order) => {
     const matchSearch = !search ||
@@ -56,8 +85,8 @@ export default function AdminOrdersPage() {
       <h1 className="text-2xl font-bold mb-6">订单管理</h1>
 
       {/* Filters */}
-      <div className="flex gap-3 mb-6">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex gap-3 mb-6 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
@@ -71,6 +100,7 @@ export default function AdminOrdersPage() {
             { value: "", label: "全部" },
             { value: "PAID", label: "已支付" },
             { value: "PENDING", label: "待支付" },
+            { value: "CANCELLED", label: "已取消" },
             { value: "REFUNDED", label: "已退款" },
           ].map((f) => (
             <Button
@@ -89,7 +119,7 @@ export default function AdminOrdersPage() {
       {filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">暂无订单</div>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-hidden overflow-x-auto">
           <table className="w-full">
             <thead className="bg-muted/50">
               <tr>
@@ -99,11 +129,13 @@ export default function AdminOrdersPage() {
                 <th className="text-left p-3 text-sm font-medium">金额</th>
                 <th className="text-left p-3 text-sm font-medium">状态</th>
                 <th className="text-left p-3 text-sm font-medium">时间</th>
+                <th className="text-right p-3 text-sm font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((order) => {
                 const status = statusMap[order.status] || statusMap.PENDING;
+                const isProcessing = actionLoading === order.id;
                 return (
                   <tr key={order.id} className="border-t">
                     <td className="p-3 font-mono text-sm">{order.orderNumber}</td>
@@ -117,6 +149,49 @@ export default function AdminOrdersPage() {
                       <Badge variant={status.variant}>{status.label}</Badge>
                     </td>
                     <td className="p-3 text-sm text-muted-foreground">{formatDate(order.createdAt)}</td>
+                    <td className="p-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {order.status === "PENDING" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isProcessing}
+                            onClick={() => handleStatusChange(order.id, "cancel")}
+                            title="取消订单"
+                          >
+                            <Ban className="h-4 w-4 mr-1" />
+                            取消
+                          </Button>
+                        )}
+                        {order.status === "PAID" && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={isProcessing}
+                              onClick={() => handleStatusChange(order.id, "cancel")}
+                              title="取消订单"
+                            >
+                              <Ban className="h-4 w-4 mr-1" />
+                              取消
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={isProcessing}
+                              onClick={() => handleStatusChange(order.id, "refund")}
+                              title="退款"
+                            >
+                              <RotateCcw className="h-4 w-4 mr-1" />
+                              退款
+                            </Button>
+                          </>
+                        )}
+                        {(order.status === "CANCELLED" || order.status === "REFUNDED") && (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
