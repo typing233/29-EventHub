@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  events Event[]
+  orders Order[]
+}
+
+enum UserRole {
+  ADMIN
+  ORGANIZER
+  USER
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  organizerId String
+  name        String
+  description String?     @db.Text
+  location    String
+  coverImage  String?
+  startTime   DateTime
+  endTime     DateTime
+  status      EventStatus @default(DRAFT)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  organizer   User         @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  ticketTypes TicketType[]
+  orders      Order[]
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  ENDED
+}
+
+model TicketType {
+  id          String   @id @default(uuid())
+  eventId     String
+  name        String
+  description String?
+  price       Int
+  quantity    Int
+  soldCount   Int      @default(0)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique
+  userId          String?
+  eventId         String
+  status          OrderStatus @default(PENDING)
+  totalAmount     Int
+  buyerName       String
+  buyerEmail      String
+  buyerPhone      String?
+  stripeSessionId String?     @unique
+  stripePaymentId String?
+  paidAt          DateTime?
+  cancelledAt     DateTime?
+  refundedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user       User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  event      Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  tickets    Ticket[]
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+model OrderItem {
+  id           String @id @default(uuid())
+  orderId      String
+  ticketTypeId String
+  quantity     Int
+  unitPrice    Int
+
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id], onDelete: Cascade)
+}
+
+model Ticket {
+  id           String       @id @default(uuid())
+  orderId      String
+  ticketNumber String       @unique
+  qrCode       String       @unique
+  status       TicketStatus @default(VALID)
+  usedAt       DateTime?
+  createdAt    DateTime     @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+}
